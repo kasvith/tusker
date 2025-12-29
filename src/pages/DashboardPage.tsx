@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Circle,
@@ -11,52 +11,79 @@ import {
   X,
   ChevronDown,
   Check,
+  Loader2,
 } from "lucide-react";
+import {
+  getProjects,
+  getTasks,
+  addTask,
+  updateTaskStatus,
+  deleteTask,
+  type Project,
+  type Task,
+} from "@/services/tauri";
 
+// Mock sessions for now - will be real later
 const mockSessions = [
   { id: 1, project: "stoxly-core", time: "2m", preview: "Working on auth flow...", active: true },
   { id: 2, project: "wavezync", time: "15m", preview: "Fixing WebSocket reconnect...", active: true },
   { id: 3, project: "crewzync", time: "1h", preview: "Completed migration script", active: false },
 ];
 
-const initialTasks = [
-  { id: 1, content: "Implement auth middleware", project: "stoxly-core", status: "in_progress" },
-  { id: 2, content: "Fix database migration", project: "crewzync", status: "pending" },
-  { id: 3, content: "Add WebSocket handler", project: "wavezync", status: "pending" },
-];
-
-const projects = ["stoxly-core", "wavezync", "crewzync", "docs"];
-
 export function DashboardPage() {
-  const [tasks, setTasks] = useState(initialTasks);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskContent, setNewTaskContent] = useState("");
-  const [newTaskProject, setNewTaskProject] = useState(projects[0]);
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string>("");
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
-  const handleAddTask = () => {
-    if (!newTaskContent.trim()) return;
+  // Fetch data on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-    const newTask = {
-      id: Date.now(),
-      content: newTaskContent.trim(),
-      project: newTaskProject,
-      status: "pending",
-    };
-
-    setTasks([newTask, ...tasks]);
-    setNewTaskContent("");
-    setShowAddTask(false);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [projectsData, tasksData] = await Promise.all([
+        getProjects(),
+        getTasks(),
+      ]);
+      setProjects(projectsData);
+      setTasks(tasksData);
+      if (projectsData.length > 0 && !newTaskProjectId) {
+        setNewTaskProjectId(projectsData[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleTaskStatus = (taskId: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? { ...task, status: task.status === "completed" ? "pending" : "completed" }
-          : task
-      )
-    );
+  const handleAddTask = async () => {
+    if (!newTaskContent.trim() || !newTaskProjectId) return;
+
+    try {
+      const newTask = await addTask(newTaskProjectId, newTaskContent.trim());
+      setTasks([newTask, ...tasks]);
+      setNewTaskContent("");
+      setShowAddTask(false);
+    } catch (error) {
+      console.error("Failed to add task:", error);
+    }
+  };
+
+  const handleToggleTaskStatus = async (task: Task) => {
+    const newStatus = task.status === "completed" ? "pending" : "completed";
+    try {
+      const updatedTask = await updateTaskStatus(task.id, newStatus);
+      setTasks(tasks.map((t) => (t.id === task.id ? updatedTask : t)));
+    } catch (error) {
+      console.error("Failed to update task:", error);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -70,30 +97,63 @@ export function DashboardPage() {
     }
   };
 
+  const getProjectName = (projectId: string) => {
+    const project = projects.find((p) => p.id === projectId);
+    return project?.name || "Unknown";
+  };
+
+  const selectedProject = projects.find((p) => p.id === newTaskProjectId);
+
+  // Get the first in-progress task as today's focus
+  const todaysFocus = tasks.find((t) => t.status === "in_progress") || tasks.find((t) => t.status === "pending");
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
 
       {/* Project Quick Switch */}
-      <div className="flex items-center justify-center gap-2">
-        {projects.map((project) => (
-          <button
-            key={project}
-            className="px-3 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover rounded-full transition-colors"
-          >
-            {project}
-          </button>
-        ))}
-      </div>
+      {projects.length > 0 && (
+        <div className="flex items-center justify-center gap-2">
+          {projects.slice(0, 4).map((project) => (
+            <button
+              key={project.id}
+              className="px-3 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover rounded-full transition-colors"
+            >
+              {project.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Hero - What to work on */}
       <div className="text-center py-6">
         <p className="text-xs text-text-muted mb-2">TODAY'S FOCUS</p>
-        <h1 className="text-xl font-medium text-text-primary mb-1">
-          Implement auth middleware
-        </h1>
-        <p className="text-sm text-text-muted">
-          stoxly-core · In Progress
-        </p>
+        {todaysFocus ? (
+          <>
+            <h1 className="text-xl font-medium text-text-primary mb-1">
+              {todaysFocus.content}
+            </h1>
+            <p className="text-sm text-text-muted">
+              {getProjectName(todaysFocus.project_id)} · {todaysFocus.status === "in_progress" ? "In Progress" : "Pending"}
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-xl font-medium text-text-primary mb-1">
+              No tasks yet
+            </h1>
+            <p className="text-sm text-text-muted">
+              Add a task to get started
+            </p>
+          </>
+        )}
         <button className="mt-4 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded transition-colors inline-flex items-center gap-2">
           <Play size={14} />
           Continue Session
@@ -112,7 +172,7 @@ export function DashboardPage() {
         </div>
         <div className="flex items-center gap-1.5">
           <CheckCircle size={12} className="text-success" />
-          <span>7 done</span>
+          <span>{tasks.filter((t) => t.status === "completed").length} done</span>
         </div>
       </div>
 
@@ -159,13 +219,14 @@ export function DashboardPage() {
             <button
               onClick={() => setShowAddTask(true)}
               className="text-xs text-accent hover:text-accent-hover transition-colors"
+              disabled={projects.length === 0}
             >
               + Add
             </button>
           </div>
 
           {/* Add Task Form */}
-          {showAddTask && (
+          {showAddTask && projects.length > 0 && (
             <div className="mb-3 p-3 bg-bg-elevated border border-border-subtle rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <div className="relative">
@@ -173,21 +234,21 @@ export function DashboardPage() {
                     onClick={() => setShowProjectDropdown(!showProjectDropdown)}
                     className="flex items-center gap-1 px-2 py-1 text-xs bg-bg-surface border border-border-subtle rounded hover:border-accent transition-colors"
                   >
-                    <span className="text-text-secondary">{newTaskProject}</span>
+                    <span className="text-text-secondary">{selectedProject?.name || "Select project"}</span>
                     <ChevronDown size={12} className="text-text-muted" />
                   </button>
                   {showProjectDropdown && (
-                    <div className="absolute top-full left-0 mt-1 w-32 bg-bg-surface border border-border-subtle rounded shadow-lg z-10">
+                    <div className="absolute top-full left-0 mt-1 w-40 bg-bg-surface border border-border-subtle rounded shadow-lg z-10">
                       {projects.map((project) => (
                         <button
-                          key={project}
+                          key={project.id}
                           onClick={() => {
-                            setNewTaskProject(project);
+                            setNewTaskProjectId(project.id);
                             setShowProjectDropdown(false);
                           }}
                           className="w-full px-3 py-1.5 text-xs text-left text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
                         >
-                          {project}
+                          {project.name}
                         </button>
                       ))}
                     </div>
@@ -215,7 +276,7 @@ export function DashboardPage() {
                 />
                 <button
                   onClick={handleAddTask}
-                  disabled={!newTaskContent.trim()}
+                  disabled={!newTaskContent.trim() || !newTaskProjectId}
                   className="px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
                 >
                   <Plus size={14} />
@@ -224,6 +285,12 @@ export function DashboardPage() {
               <div className="mt-2 text-[10px] text-text-muted">
                 Press Enter to add · Esc to cancel
               </div>
+            </div>
+          )}
+
+          {projects.length === 0 && (
+            <div className="text-center py-6 text-xs text-text-muted">
+              Add a project first to create tasks
             </div>
           )}
 
@@ -236,7 +303,7 @@ export function DashboardPage() {
                 }`}
               >
                 <button
-                  onClick={() => toggleTaskStatus(task.id)}
+                  onClick={() => handleToggleTaskStatus(task)}
                   className="flex-shrink-0"
                 >
                   {task.status === "completed" ? (
@@ -255,7 +322,7 @@ export function DashboardPage() {
                   }`}>
                     {task.content}
                   </div>
-                  <div className="text-xs text-text-muted">{task.project}</div>
+                  <div className="text-xs text-text-muted">{getProjectName(task.project_id)}</div>
                 </div>
               </div>
             ))}

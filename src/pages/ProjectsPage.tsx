@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,33 +12,41 @@ import {
   List,
   X,
   Folder,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-
-interface Project {
-  id: string;
-  name: string;
-  path: string;
-  sessions: number;
-  lastActive: string;
-  status: "active" | "idle";
-}
-
-const initialProjects: Project[] = [
-  { id: "stoxly-core", name: "stoxly-core", path: "~/work/stoxly/stoxly_core", sessions: 45, lastActive: "2m ago", status: "active" },
-  { id: "wavezync", name: "wavezync", path: "~/work/wavezync/durable", sessions: 28, lastActive: "15m ago", status: "active" },
-  { id: "crewzync", name: "crewzync", path: "~/work/wavezync/crewzync", sessions: 67, lastActive: "1h ago", status: "idle" },
-  { id: "stoxly-ai-mvp", name: "stoxly-ai-mvp", path: "~/work/stoxly/stoxly.ai.mvp", sessions: 23, lastActive: "3h ago", status: "idle" },
-  { id: "docs", name: "docs", path: "~/work/docs", sessions: 12, lastActive: "1d ago", status: "idle" },
-];
+import {
+  getProjects,
+  addProject,
+  deleteProject,
+  type Project,
+} from "@/services/tauri";
 
 type ViewMode = "list" | "grid";
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [isAddingProject, setIsAddingProject] = useState(false);
+
+  // Fetch projects on mount
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      const data = await getProjects();
+      setProjects(data);
+    } catch (error) {
+      console.error("Failed to fetch projects:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredProjects = projects.filter(
     (project) =>
@@ -55,29 +63,53 @@ export function ProjectsPage() {
       });
 
       if (selected && typeof selected === "string") {
-        const pathParts = selected.split("/");
-        const name = pathParts[pathParts.length - 1];
-
-        // Check if project already exists
-        if (projects.some((p) => p.path === selected)) {
-          return;
-        }
-
-        const newProject: Project = {
-          id: name.toLowerCase().replace(/\s+/g, "-"),
-          name,
-          path: selected.replace(/^\/Users\/[^/]+/, "~"),
-          sessions: 0,
-          lastActive: "Just added",
-          status: "idle",
-        };
-
+        const newProject = await addProject(selected);
         setProjects([newProject, ...projects]);
       }
     } catch (error) {
-      console.error("Failed to open directory picker:", error);
+      console.error("Failed to add project:", error);
     }
   };
+
+  const handleDeleteProject = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      await deleteProject(id);
+      setProjects(projects.filter((p) => p.id !== id));
+    } catch (error) {
+      console.error("Failed to delete project:", error);
+    }
+  };
+
+  const formatPath = (path: string) => {
+    // Replace home directory with ~
+    return path.replace(/^\/Users\/[^/]+/, "~");
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-4">
@@ -165,34 +197,29 @@ export function ProjectsPage() {
         /* List View */
         <div className="space-y-2">
           {filteredProjects.map((project) => (
-            <Link key={project.id} to={`/projects/${project.id}`} className="block">
+            <Link key={project.id} to={`/projects/${project.id}`} className="block group">
               <Card className="hover:border-border-default transition-colors cursor-pointer">
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          project.status === "active" ? "bg-success" : "bg-text-muted"
-                        }`}
-                      />
+                      <div className="w-2 h-2 rounded-full bg-text-muted" />
                       <div>
                         <div className="text-sm font-medium text-text-primary">{project.name}</div>
-                        <div className="text-xs text-text-muted">{project.path}</div>
+                        <div className="text-xs text-text-muted">{formatPath(project.path)}</div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-1 text-xs text-text-muted">
-                        <MessageSquare size={12} />
-                        <span>{project.sessions}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-text-muted">
                         <Clock size={12} />
-                        <span>{project.lastActive}</span>
+                        <span>{formatDate(project.updated_at)}</span>
                       </div>
-                      {project.status === "active" && (
-                        <Badge variant="success">Active</Badge>
-                      )}
+                      <button
+                        onClick={(e) => handleDeleteProject(e, project.id)}
+                        className="p-1 text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                       <ChevronRight size={16} className="text-text-muted" />
                     </div>
                   </div>
@@ -205,18 +232,17 @@ export function ProjectsPage() {
         /* Grid View */
         <div className="grid grid-cols-3 gap-3">
           {filteredProjects.map((project) => (
-            <Link key={project.id} to={`/projects/${project.id}`} className="block">
+            <Link key={project.id} to={`/projects/${project.id}`} className="block group">
               <Card className="hover:border-border-default transition-colors cursor-pointer h-full">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-3">
-                    <div
-                      className={`w-2 h-2 rounded-full mt-1 ${
-                        project.status === "active" ? "bg-success" : "bg-text-muted"
-                      }`}
-                    />
-                    {project.status === "active" && (
-                      <Badge variant="success">Active</Badge>
-                    )}
+                    <div className="w-2 h-2 rounded-full mt-1 bg-text-muted" />
+                    <button
+                      onClick={(e) => handleDeleteProject(e, project.id)}
+                      className="p-1 text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
 
                   <div className="mb-3">
@@ -224,18 +250,14 @@ export function ProjectsPage() {
                       {project.name}
                     </div>
                     <div className="text-xs text-text-muted truncate">
-                      {project.path}
+                      {formatPath(project.path)}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4 text-xs text-text-muted">
                     <div className="flex items-center gap-1">
-                      <MessageSquare size={12} />
-                      <span>{project.sessions}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
                       <Clock size={12} />
-                      <span>{project.lastActive}</span>
+                      <span>{formatDate(project.updated_at)}</span>
                     </div>
                   </div>
                 </CardContent>
