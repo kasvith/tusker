@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* JetBrains Mono font */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* Tusker Theme Variables */
+@theme {
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', ui-monospace, monospace;
+
+  /* Background */
+  --color-bg-base: #0a0a0b;
+  --color-bg-surface: #111113;
+  --color-bg-elevated: #18181b;
+  --color-bg-hover: #27272a;
+
+  /* Border */
+  --color-border-subtle: #27272a;
+  --color-border-default: #3f3f46;
+
+  /* Text */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #71717a;
+
+  /* Accent (Claude purple) */
+  --color-accent: #a855f7;
+  --color-accent-hover: #9333ea;
+  --color-accent-muted: #581c87;
+
+  /* Status */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+}
+
+/* Base */
+html {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Selection */
+::selection {
+  background-color: var(--color-accent-muted);
+  color: var(--color-text-primary);
+}
