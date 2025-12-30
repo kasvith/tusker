@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod models;
+mod claude;
 
 use db::Database;
 
@@ -27,6 +28,11 @@ pub fn run() {
             // Config commands
             commands::config::get_config,
             commands::config::save_config,
+            // Claude commands
+            commands::claude::get_claude_stats,
+            commands::claude::get_project_sessions,
+            commands::claude::get_recent_sessions,
+            commands::claude::get_session_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

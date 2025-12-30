@@ -77,3 +77,76 @@ export async function getConfig(): Promise<Config> {
 export async function saveConfig(config: Config): Promise<void> {
   return invoke("save_config", { config });
 }
+
+// Claude types
+export interface ClaudeSession {
+  id: string;
+  project_path: string;
+  project_name: string;
+  first_message: string;
+  message_count: number;
+  total_tokens: number;
+  model: string | null;
+  started_at: string;
+  last_activity: string;
+}
+
+export interface ClaudeMessage {
+  uuid: string;
+  parent_uuid: string | null;
+  session_id: string;
+  msg_type: "user" | "assistant";
+  content: string;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  timestamp: string;
+}
+
+export interface DailyActivity {
+  date: string;
+  message_count: number;
+  session_count: number;
+  tool_call_count: number;
+}
+
+export interface ModelUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+}
+
+export interface ClaudeStats {
+  total_sessions: number;
+  total_messages: number;
+  last_computed: string;
+  first_session_date: string | null;
+  daily_activity: DailyActivity[];
+  model_usage: Record<string, ModelUsage>;
+  longest_session: {
+    session_id: string;
+    duration: number;
+    message_count: number;
+    timestamp: string;
+  } | null;
+  tokens_today: number;
+  messages_today: number;
+  sessions_today: number;
+}
+
+// Claude commands
+export async function getClaudeStats(): Promise<ClaudeStats> {
+  return invoke<ClaudeStats>("get_claude_stats");
+}
+
+export async function getProjectSessions(projectPath: string): Promise<ClaudeSession[]> {
+  return invoke<ClaudeSession[]>("get_project_sessions", { projectPath });
+}
+
+export async function getRecentSessions(limit: number): Promise<ClaudeSession[]> {
+  return invoke<ClaudeSession[]>("get_recent_sessions", { limit });
+}
+
+export async function getSessionMessages(sessionId: string): Promise<ClaudeMessage[]> {
+  return invoke<ClaudeMessage[]>("get_session_messages", { sessionId });
+}

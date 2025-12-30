@@ -12,27 +12,49 @@ import {
   ChevronDown,
   Check,
   Loader2,
+  MessageSquare,
 } from "lucide-react";
 import {
   getProjects,
   getTasks,
   addTask,
   updateTaskStatus,
-  deleteTask,
+  getRecentSessions,
+  getClaudeStats,
   type Project,
   type Task,
+  type ClaudeSession,
+  type ClaudeStats,
 } from "@/services/tauri";
 
-// Mock sessions for now - will be real later
-const mockSessions = [
-  { id: 1, project: "stoxly-core", time: "2m", preview: "Working on auth flow...", active: true },
-  { id: 2, project: "wavezync", time: "15m", preview: "Fixing WebSocket reconnect...", active: true },
-  { id: 3, project: "crewzync", time: "1h", preview: "Completed migration script", active: false },
-];
+// Format relative time
+function formatRelativeTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
+// Format token count
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
+  return tokens.toString();
+}
 
 export function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [sessions, setSessions] = useState<ClaudeSession[]>([]);
+  const [stats, setStats] = useState<ClaudeStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskContent, setNewTaskContent] = useState("");
@@ -47,12 +69,16 @@ export function DashboardPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [projectsData, tasksData] = await Promise.all([
+      const [projectsData, tasksData, sessionsData, statsData] = await Promise.all([
         getProjects(),
         getTasks(),
+        getRecentSessions(10).catch(() => []),
+        getClaudeStats().catch(() => null),
       ]);
       setProjects(projectsData);
       setTasks(tasksData);
+      setSessions(sessionsData);
+      setStats(statsData);
       if (projectsData.length > 0 && !newTaskProjectId) {
         setNewTaskProjectId(projectsData[0].id);
       }
@@ -164,51 +190,57 @@ export function DashboardPage() {
       <div className="flex items-center justify-center gap-6 text-xs text-text-muted">
         <div className="flex items-center gap-1.5">
           <Zap size={12} className="text-warning" />
-          <span>12.4k tokens</span>
+          <span>{stats ? formatTokens(stats.tokens_today) : "0"} tokens today</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Clock size={12} className="text-info" />
-          <span>4h 32m</span>
+          <MessageSquare size={12} className="text-info" />
+          <span>{stats?.messages_today || 0} messages</span>
         </div>
         <div className="flex items-center gap-1.5">
           <CheckCircle size={12} className="text-success" />
-          <span>{tasks.filter((t) => t.status === "completed").length} done</span>
+          <span>{tasks.filter((t) => t.status === "completed").length} tasks done</span>
         </div>
       </div>
 
       {/* Two columns */}
       <div className="grid grid-cols-2 gap-6">
 
-        {/* Active Sessions */}
+        {/* Recent Sessions */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
-              <span className="text-sm text-text-primary">Active</span>
+              <span className="w-1.5 h-1.5 bg-accent rounded-full" />
+              <span className="text-sm text-text-primary">Recent Sessions</span>
             </div>
-            <span className="text-xs text-text-muted">{mockSessions.filter(s => s.active).length} sessions</span>
+            <span className="text-xs text-text-muted">{sessions.length} sessions</span>
           </div>
           <div className="space-y-2">
-            {mockSessions.map((session) => (
-              <Card
-                key={session.id}
-                className={`cursor-pointer transition-colors hover:border-border-default ${!session.active && 'opacity-50'}`}
-              >
-                <CardContent className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-1.5 h-1.5 rounded-full ${session.active ? 'bg-success' : 'bg-text-muted'}`} />
-                    <div>
-                      <div className="text-sm text-text-primary">{session.project}</div>
-                      <div className="text-xs text-text-muted">{session.preview}</div>
+            {sessions.length === 0 ? (
+              <div className="text-center py-6 text-xs text-text-muted">
+                No Claude sessions found
+              </div>
+            ) : (
+              sessions.slice(0, 5).map((session) => (
+                <Card
+                  key={session.id}
+                  className="cursor-pointer transition-colors hover:border-border-default"
+                >
+                  <CardContent className="p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm text-text-primary truncate">{session.project_name}</div>
+                        <div className="text-xs text-text-muted truncate">{session.first_message}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-text-muted">
-                    <span>{session.time}</span>
-                    <ArrowRight size={12} />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0 ml-2">
+                      <span>{formatRelativeTime(session.last_activity)}</span>
+                      <ArrowRight size={12} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </div>
 
